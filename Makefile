@@ -30,12 +30,12 @@ test-coverage: ## Run tests with coverage
 	@cat cover.out >> coverage.txt
 
 build: dep ## Build the binary file
-	@go build -i -o kvass cmd/kvass/*.go
+	@go build -ldflags "-s -w" -i -o kvass cmd/kvass/*.go
 
 build-linux:
 	@echo "building ${BIN_NAME} ${VERSION}"
 	@echo "GOPATH=${GOPATH}"
-    @CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -i -o kvass cmd/kvass/*.go
+    @CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build "-s -w" -i -o kvass cmd/kvass/*.go
 
 image: build-linux
 	@docker build -f ./Dockerfile --rm -t ${IMAGE_NAME} .
