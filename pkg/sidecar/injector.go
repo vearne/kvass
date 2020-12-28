@@ -19,18 +19,16 @@ package sidecar
 
 import (
 	"fmt"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/pkg/relabel"
 	"io/ioutil"
 	"net/url"
 	"os"
 	"strings"
 	"sync"
 	"tkestack.io/kvass/pkg/target"
-
-	"github.com/prometheus/prometheus/pkg/relabel"
-
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/sirupsen/logrus"
@@ -55,25 +53,31 @@ type InjectConfigOptions struct {
 // Injector gen injected config file
 type Injector struct {
 	sync.Mutex
-	originFile string
-	outFile    string
-	option     InjectConfigOptions
-	curTargets map[string][]*target.Target
-	readFile   func(file string) ([]byte, error)
-	writeFile  func(filename string, data []byte, perm os.FileMode) error
-	log        logrus.FieldLogger
+	originFile     string
+	outFile        string
+	option         InjectConfigOptions
+	curTargets     map[string][]*target.Target
+	readFile       func(file string) ([]byte, error)
+	writeFile      func(filename string, data []byte, perm os.FileMode) error
+	remoteWriteURL string
+	remoteReadURL  string
+	log            logrus.FieldLogger
 }
 
 // NewInjector create new injector with InjectConfigOptions
-func NewInjector(originFile, outFile string, option InjectConfigOptions, log logrus.FieldLogger) *Injector {
+func NewInjector(originFile, outFile string, option InjectConfigOptions,
+	remoteWriteURL, remoteReadURL string,
+	log logrus.FieldLogger) *Injector {
 	return &Injector{
-		originFile: originFile,
-		outFile:    outFile,
-		option:     option,
-		curTargets: map[string][]*target.Target{},
-		readFile:   ioutil.ReadFile,
-		writeFile:  ioutil.WriteFile,
-		log:        log,
+		originFile:     originFile,
+		outFile:        outFile,
+		option:         option,
+		curTargets:     map[string][]*target.Target{},
+		readFile:       ioutil.ReadFile,
+		writeFile:      ioutil.WriteFile,
+		remoteWriteURL: remoteWriteURL,
+		remoteReadURL:  remoteReadURL,
+		log:            log,
 	}
 }
 
@@ -152,6 +156,30 @@ func (i *Injector) UpdateConfig() error {
 		if w.HTTPClientConfig.BasicAuth != nil && w.HTTPClientConfig.BasicAuth.Password != "" {
 			password = append(password, string(w.HTTPClientConfig.BasicAuth.Password))
 		}
+	}
+
+	if i.remoteWriteURL != "" {
+		cfg.RemoteWriteConfigs = make([]*config.RemoteWriteConfig, 0)
+		u, err := url.Parse(i.remoteWriteURL)
+		if err != nil {
+			return err
+		}
+		wc := &config.RemoteWriteConfig{URL: &config_util.URL{
+			URL: u,
+		}}
+		cfg.RemoteWriteConfigs = append(cfg.RemoteWriteConfigs, wc)
+	}
+
+	if i.remoteReadURL != "" {
+		cfg.RemoteReadConfigs = make([]*config.RemoteReadConfig, 0)
+		u, err := url.Parse(i.remoteReadURL)
+		if err != nil {
+			return err
+		}
+		rc := &config.RemoteReadConfig{URL: &config_util.URL{
+			URL: u,
+		}}
+		cfg.RemoteReadConfigs = append(cfg.RemoteReadConfigs, rc)
 	}
 
 	gen, err := yaml.Marshal(&cfg)
